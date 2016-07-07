@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+	<link rel="stylesheet" type="text/css" href="common.css">
+</head>
+<body>
+<h1>Test suite for illegal request aborts in browser implementations</h1>
+<a class="nav" href="index.html" target="_top">home</a>
+<a class="nav" href="info.html" target="_top">info</a>
+<p>
+Some browsers (firefox, safari) abort pending requests (ajax, images, websockets...) as soon as a new location is assigned to document.location.href
+(link is clicked, form is submitted, javascript assigns document.location.href).<br><br>
+The majority of browsers (chrome, internet explorer) do not abort any requests in this situation.<br>
+This site provides a <a href="/">test suite</a> that detects whether a browser does abort requests when a new location is assigned.
+</p>
+<p>
+If you have any questions regarding this site, please <b>contact mirko.tschaeni [at] unblu.com</b>
+</p>
+
+<h2>What is going wrong?</h2>
+<p>
+In short browsing context navigation consists of the following phases:
+</p>
+<ol>
+<li>Navigation is initiated (i.e. link is clicked, form is submitted, document.location.href is assigned)</li>
+<li>Various preparation steps (i.e. exit the navigation algorithm if a download link is clicked, handle fragment identifiers...)</li>
+<li>A fetch algorithm starts in in the background</li>
+<li>The fetch algorithm delivers a server response</li>
+<li>Perform various checks based on the response (i.e. hand over to external application (and cancel navigation), if the content-type cannot be rendered in the browser, show download dialog if content-disposition is attachement...)
+<li>Unload the current document (fire unload event, cancel all pending fetch algorithms, close websockets, destroy javascript context...)</li>
+<li>Start parsing and rendering the new document</li>
+</ol>
+<p>
+Browsers that are are affected will cancel all pending fetch algorithms in phase 2. To the web application this looks like a random error in the middle of 
+document live cycle and there is no way to detect why these fetch algorithms (ajax request, images...) suddenly stopped loading.<br>
+For requests that are created after the location assignment (step 1), there are two different behaviors: In some browsers (firefox, chrome, internet explorer), they work normally,
+in other browsers (safari), they do not work at all (no fetching takes place, no events are fired).<br><br>
+If the navigation results in a hand over to an external application or in a download, the browser context will not navigate and will not unload, thus the document continues to live but 
+might be corrupted due to aborted fetches (images, css, ajax, websockets...).
+</p>
+
+<h2>Which browsers are affected?</h2>
+<p>
+Within the tested browsers (Chrome, Firefox, Internet Explorer, Safari)... <br><br>
+
+...the following <b>ARE</b> affected:<br><br>
+
+<b style="color: red">Firefox (aborts requests on location assignment), see <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1084399">Issue 1084399, bugzilla.mozilla.org</a></b><br>
+<b style="color: red">Safari (aborts requests on location assignment, does not allow new requests until after location assignment, does NOT abort websockets), see <a href="https://bugs.webkit.org/show_bug.cgi?id=137817">Issue 137817, bugs.webkit.org</a> and <a href="https://bugs.webkit.org/show_bug.cgi?id=23933">Issue 23933, bugs.webkit.org</a></b><br>
+<br>
+
+
+...and the following <b>ARE NOT</b> affected:<br><br>
+<b style="color: #00A326">Internet Explorer</b><br>
+<b style="color: #00A326">Chrome</b> <b style="color: #CC3300">(used to be affected until version 36)</b><br>
+ 
+</p>
+
+<h2>Why is aborting requests on location assignment problematic?</h2>
+<p>
+At the time a new location is assigned (click on link, form submit, document.location.href assignment), it is impossible to tell whether the started navigation 
+will result in a new document being loaded in the current browser context or not. Only when the response has arrived, it is possible to know whether the 
+content can be rendered in the browser. Aborting requests early (at the time of the location assignment) is premature and can cause various problems.
+...especially if a web application consists of components from different vendors that do not have full control over the whole application. 
+</p>
+<ol>
+<li>Components that rely on client/server communication must be able to deals with random request aborts</li>
+<li>Documents might not fully render because image or css fetches are stopped</li>
+<li>Documents might be corrupted because some resource loads were aborted</li>
+<li>It is not possible to tell resource aborts caused by location assignment from other aborts (the situation cannot be detected)</li>
+<li>File upload monitoring after a form submit is impossible</li>
+</ol>
+<p>
+Especially if the started navigation ends in something that is not rendered in the browser, this can leave the current document in a currupted state even if the page remains displayed 
+as if the navigation had never started.
+</p>
+
+<h2>What does the spec say?</h2>
+<p>
+The spec (<a href="https://html.spec.whatwg.org/multipage/browsers.html">https://html.spec.whatwg.org/multipage/browsers.html</a>) describes navigation here: 
+<a href="https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents">https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents</a>, in step
+12 it references <a href="https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document">https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document</a> which basically
+says that the document load should be aborted when a location is assigned.<br><br>
+
+I think the spec is wrong (or not precise enough) here:<br><br>
+
+<a href="https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document">https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document</a> titles "Aborting a document load"
+which indicates that this algorithm must only be applied to documents that are not fully loaded. <a href="https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents>
+https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents</a> however delegates to "Aborting a document load" whether the document is fully loaded or not.<br><br>
+
+In addition to this ambiguity i think that <a href="https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document">https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document</a>
+should be overthought.<br>
+<a href="https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document">https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document</a> is invoked when the 
+user presses the stop button, which i think is ok. However the stop button might make the user think that the page will be stopped completely. However this is not the case: javascript
+execution is not stopped, in most browsers javascript can spawn new requests (ajax, images, websockets). I think that the stop button should stop everything (parsing, script execution, requests,
+websockets, workers...).<br><br>
+
+I also think that <a href="https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents">https://html.spec.whatwg.org/multipage/browsers.html#navigating-across-documents</a>
+should not invoke <a href="https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document">https://html.spec.whatwg.org/multipage/browsers.html#abort-a-document</a> because at this time
+it is impossible to tell whether the started navigation is going to affect the current browsing context at all or not.
+
+
+</p>
+
+
+
+
+<a name="whatistested"></a>
+<h2>What is tested?</h2>
+<p>
+The <a href="/">tests</a> on this site test whether fetch algorithms are aborted by location assignments before the response has reached the browser.<br>
+First a request is created to a resource that only responds after a given amount of time. Within this amount of time, document.location.href is assigned to see whether the
+pending request gets aborted. In order to have enough time for analysing whether requests are aborted, the url of the location assignment also responds slowly.
+The tests can be run in a different configurations, testing different scenarios:
+</p>
+<a name="type"></a>
+<h3>Type of request</h3>
+<p>
+The type of the request that is tested can be one of: ajax, image or websocket<br><br>
+
+For ajax a simple async ajax request is created.<br><br>
+For image a javascript Image object is created and the src property is assigned.<br><br>
+For websocket a WebSocket is opened and tested using a simple echo service.<br><br>
+
+For most browsers the type does not matter (all requests are aborted). Exception: safari does not abort(close) websockets. 
+</p>
+
+
+<a name="phase"></a>
+<h3>Document life cycle phase</h3>
+<p>
+The test can be run in different phases of document life cycle.
+
+Loading: before the load event has fired on window<br><br>
+Loaded: after the load event has fired on window<br><br>
+Navigating: after a location assignment has taken place (this is in order to test how new requests after the assignment are treated)<br><br>
+
+All tests are guaranteed to run BEFORE the unload event.<br><br>
+
+</p>
+
+<a name="origin"></a>
+<h3>Origin of the resource</h3>
+<p>
+The test can be run against resources that are same origin or from a third party origin (xorigin).
+
+same: the resource is loaded from the same origin as the current document<br><br>
+xorigin: the resource is loaded from a origin that is different form the origin of the current document<br><br>
+
+
+Whether a resource is fetched from same origin or not does not seam to influence the outcome of the test.
+</p>
+
+
+
+</body>
+</html>
