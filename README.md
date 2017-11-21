@@ -13,7 +13,6 @@ https://bugs.webkit.org/show_bug.cgi?id=137817
 
 Please also feel free to contact the author via mirko.tschaeni@unblu.com
 
-The source code can also be obtained from https://illegal-ajax-aborts.googlecode.com
 
 INSTALLATION
 ------------
