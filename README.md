@@ -6,8 +6,6 @@ Some browsers abort pending requests (ajax, images, websockets...) when a new lo
 a link, form is submitted, document.location.href is assigned a new value...). This application implements a 
 test suite that can be used to test a browser whether it is affected or not.
 
-This application is available online here http://lab-browserillegalrequestabort-1.unblu.com/
-
 Please also have a look at the reported issues:
 
 https://bugzilla.mozilla.org/show_bug.cgi?id=1084399
